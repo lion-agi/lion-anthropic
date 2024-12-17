@@ -3,8 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from lion_anthropic.api_endpoints.data_models import \
-    AnthropicEndpointResponseBody
+from lion_anthropic.api_endpoints.data_models import AnthropicEndpointResponseBody
 
 
 class ErrorType(str, Enum):

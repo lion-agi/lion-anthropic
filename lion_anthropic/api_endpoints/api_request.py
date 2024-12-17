@@ -21,21 +21,15 @@ class AnthropicEndpoint(str, Enum):
 
 
 class AnthropicRequest(BaseModel):
-    api_key: str = Field(
-        description="API key for authentication", exclude=True
-    )
+    api_key: str = Field(description="API key for authentication", exclude=True)
 
     endpoint: str = Field(description="Endpoint for request")
 
     method: str = Field(description="HTTP method")
 
-    content_type: str | None = Field(
-        default=None, description="HTTP Content-Type"
-    )
+    content_type: str | None = Field(default=None, description="HTTP Content-Type")
 
-    api_version: str = Field(
-        default="2023-06-01", description="Anthropic API version"
-    )
+    api_version: str = Field(default="2023-06-01", description="Anthropic API version")
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -86,9 +80,7 @@ class AnthropicRequest(BaseModel):
     ) -> Any:
         url = self.base_url + self.get_endpoint(path_param)
         headers = self.get_headers()
-        json_data = (
-            json_data.model_dump(exclude_unset=True) if json_data else None
-        )
+        json_data = json_data.model_dump(exclude_unset=True) if json_data else None
         params = params.model_dump(exclude_unset=True) if params else None
 
         async with aiohttp.ClientSession() as client:
@@ -234,7 +226,9 @@ class AnthropicRequest(BaseModel):
                                 # Print content when verbose is True
                                 if verbose:
                                     if chunk_data.get("type") == "content_block_delta":
-                                        if text := chunk_data.get("delta", {}).get("text"):
+                                        if text := chunk_data.get("delta", {}).get(
+                                            "text"
+                                        ):
                                             print(text, end="", flush=True)
 
                                 yield chunk_data

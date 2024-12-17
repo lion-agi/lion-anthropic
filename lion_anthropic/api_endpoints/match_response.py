@@ -24,32 +24,37 @@ def match_response(request_model, response: dict | list):
                     AnthropicMessageResponseBody
                 )
 
-            # Convert to OpenAI-like format for AssistantResponse
-            text_content = ""
-            if response.get("content") and len(response["content"]) > 0:
-                text_content = " ".join(
-                    block["text"]
-                    for block in response["content"]
-                    if block["type"] == "text"
-                )
+            # Convert to AnthropicMessageResponseBody
+            from .messages.responses.content import TextResponseContent
+            from .messages.responses.usage import Usage
 
-            return {
-                "choices": [
-                    {
-                        "message": {
-                            "content": text_content.strip(),
-                            "role": "assistant",
-                        },
-                        "finish_reason": "stop",
-                    }
-                ],
-                "model": response.get("model"),
-                "usage": response.get("usage")
-                or {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                },
+            # Create response content
+            content = []
+            if response.get("content") and len(response["content"]) > 0:
+                for block in response["content"]:
+                    if block["type"] == "text":
+                        content.append(
+                            TextResponseContent(type="text", text=block["text"])
+                        )
+
+            # Create usage info
+            usage_data = response.get("usage") or {
+                "input_tokens": 0,
+                "output_tokens": 0,
             }
+            usage = Usage(**usage_data)
+
+            # Create full response
+            return imported_models["AnthropicMessageResponseBody"](
+                id=response.get("id", ""),
+                type="message",
+                role="assistant",
+                content=content,
+                model=response.get("model"),
+                stop_reason=response.get("stop_reason"),
+                stop_sequence=response.get("stop_sequence"),
+                usage=usage,
+            )
         else:
             # Stream response list
             if "AnthropicMessageResponseBody" not in imported_models:
@@ -61,46 +66,17 @@ def match_response(request_model, response: dict | list):
                     AnthropicMessageResponseBody
                 )
 
+            from .messages.responses.stream_events import StreamEvent
+
             events = []
             for item in response:
                 if not isinstance(item, dict) or "type" not in item:
                     continue
-
-                event_type = item.get("type")
-
-                if event_type == "message_start":
-                    events.append({
-                        "type": "message_start",
-                        "message": item.get("message", {}),
-                    })
-
-                elif event_type == "content_block_start":
-                    if "content_block" in item:
-                        events.append({
-                            "type": "content_block_start",
-                            "content": item["content_block"],
-                        })
-
-                elif event_type == "content_block_delta":
-                    delta = item.get("delta", {})
-                    if delta.get("type") == "text_delta" and "text" in delta:
-                        events.append({
-                            "type": "content_block_delta",
-                            "delta": delta,
-                        })
-
-                elif event_type == "message_delta":
-                    if "usage" in item:
-                        events.append({
-                            "type": "message_delta",
-                            "usage": item["usage"],
-                        })
-
-                elif event_type == "message_stop":
-                    events.append({
-                        "type": "message_stop",
-                        "usage": item.get("usage"),
-                    })
+                try:
+                    event = StreamEvent.model_validate(item)
+                    events.append(event)
+                except ValueError:
+                    continue
 
             return events
 
