@@ -16,8 +16,7 @@ def match_response(request_model, response: dict | list):
         if isinstance(response, dict):
             # Single message response
             if "AnthropicMessageResponseBody" not in imported_models:
-                from .messages.response_body import \
-                    AnthropicMessageResponseBody
+                from .messages.response_body import AnthropicMessageResponseBody
                 from .messages.responses.content import TextResponseContent
                 from .messages.responses.usage import Usage
 
@@ -54,8 +53,7 @@ def match_response(request_model, response: dict | list):
         else:
             # Stream response list
             if "AnthropicMessageResponseBody" not in imported_models:
-                from .messages.response_body import \
-                    AnthropicMessageResponseBody
+                from .messages.response_body import AnthropicMessageResponseBody
                 from .messages.responses.content import TextResponseContent
                 from .messages.responses.usage import Usage
 
@@ -71,48 +69,38 @@ def match_response(request_model, response: dict | list):
                 event_type = item.get("type")
 
                 if event_type == "message_start":
-                    events.append(
-                        {
-                            "type": "message_start",
-                            "message": item.get("message", {}),
-                        }
-                    )
+                    events.append({
+                        "type": "message_start",
+                        "message": item.get("message", {}),
+                    })
 
                 elif event_type == "content_block_start":
                     if "content_block" in item:
-                        events.append(
-                            {
-                                "type": "content_block_start",
-                                "content": item["content_block"],
-                            }
-                        )
+                        events.append({
+                            "type": "content_block_start",
+                            "content": item["content_block"],
+                        })
 
                 elif event_type == "content_block_delta":
                     delta = item.get("delta", {})
                     if delta.get("type") == "text_delta" and "text" in delta:
-                        events.append(
-                            {
-                                "type": "content_block_delta",
-                                "delta": delta,
-                            }
-                        )
+                        events.append({
+                            "type": "content_block_delta",
+                            "delta": delta,
+                        })
 
                 elif event_type == "message_delta":
                     if "usage" in item:
-                        events.append(
-                            {
-                                "type": "message_delta",
-                                "usage": item["usage"],
-                            }
-                        )
+                        events.append({
+                            "type": "message_delta",
+                            "usage": item["usage"],
+                        })
 
                 elif event_type == "message_stop":
-                    events.append(
-                        {
-                            "type": "message_stop",
-                            "usage": item.get("usage"),
-                        }
-                    )
+                    events.append({
+                        "type": "message_stop",
+                        "usage": item.get("usage"),
+                    })
 
             return events
 
