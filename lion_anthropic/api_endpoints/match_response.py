@@ -16,7 +16,8 @@ def match_response(request_model, response: dict | list):
         if isinstance(response, dict):
             # Single message response
             if "AnthropicMessageResponseBody" not in imported_models:
-                from .messages.response_body import AnthropicMessageResponseBody
+                from .messages.response_body import \
+                    AnthropicMessageResponseBody
                 from .messages.responses.content import TextResponseContent
                 from .messages.responses.usage import Usage
 
@@ -53,7 +54,8 @@ def match_response(request_model, response: dict | list):
         else:
             # Stream response list
             if "AnthropicMessageResponseBody" not in imported_models:
-                from .messages.response_body import AnthropicMessageResponseBody
+                from .messages.response_body import \
+                    AnthropicMessageResponseBody
                 from .messages.responses.content import TextResponseContent
                 from .messages.responses.usage import Usage
 
@@ -61,11 +63,7 @@ def match_response(request_model, response: dict | list):
                     AnthropicMessageResponseBody
                 )
 
-            # For streaming, combine all text deltas into a single response
-            text_content = ""
-            final_usage = None
-            initial_message = None
-
+            events = []
             for item in response:
                 if not isinstance(item, dict) or "type" not in item:
                     continue
@@ -73,53 +71,50 @@ def match_response(request_model, response: dict | list):
                 event_type = item.get("type")
 
                 if event_type == "message_start":
-                    initial_message = item.get("message", {})
-                    if initial_message.get("content"):
-                        for block in initial_message["content"]:
-                            if block.get("type") == "text":
-                                text_content += block.get("text", "")
+                    events.append(
+                        {
+                            "type": "message_start",
+                            "message": item.get("message", {}),
+                        }
+                    )
 
                 elif event_type == "content_block_start":
                     if "content_block" in item:
-                        block = item["content_block"]
-                        if block.get("type") == "text":
-                            text_content += block.get("text", "")
+                        events.append(
+                            {
+                                "type": "content_block_start",
+                                "content": item["content_block"],
+                            }
+                        )
 
                 elif event_type == "content_block_delta":
                     delta = item.get("delta", {})
                     if delta.get("type") == "text_delta" and "text" in delta:
-                        text = delta["text"]
-                        text_content += text
-                        print(text, end="", flush=True)  # Print streaming text
+                        events.append(
+                            {
+                                "type": "content_block_delta",
+                                "delta": delta,
+                            }
+                        )
 
                 elif event_type == "message_delta":
                     if "usage" in item:
-                        final_usage = item["usage"]
+                        events.append(
+                            {
+                                "type": "message_delta",
+                                "usage": item["usage"],
+                            }
+                        )
 
                 elif event_type == "message_stop":
-                    if "usage" in item:
-                        final_usage = item["usage"]
-                    elif initial_message and "usage" in initial_message:
-                        final_usage = initial_message["usage"]
-                    print()  # Add newline at end of message
+                    events.append(
+                        {
+                            "type": "message_stop",
+                            "usage": item.get("usage"),
+                        }
+                    )
 
-            # Return in OpenAI format
-            return {
-                "choices": [
-                    {
-                        "message": {
-                            "content": text_content.strip(),
-                            "role": "assistant",
-                        },
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": final_usage
-                or {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                },
-            }
+            return events
 
     raise ValueError(
         "There is no standard response model for the provided request and response"

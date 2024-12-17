@@ -84,7 +84,7 @@ class AnthropicRequest(BaseModel):
 
                 # Handle stream response (text/event-stream)
                 if response.headers.get("Content-Type") == "text/event-stream":
-                    collected_events = []
+                    events = []
                     buffer = ""
                     async for chunk in response.content:
                         chunk_str = chunk.decode("utf-8")
@@ -99,19 +99,34 @@ class AnthropicRequest(BaseModel):
 
                                 try:
                                     event_dict = json.loads(data)
-                                    collected_events.append(event_dict)
+                                    # Print streaming text immediately
+                                    if event_dict.get("type") == "content_block_delta":
+                                        delta = event_dict.get("delta", {})
+                                        if (
+                                            delta.get("type") == "text_delta"
+                                            and "text" in delta
+                                        ):
+                                            print(delta["text"], end="", flush=True)
+                                    elif event_dict.get("type") == "message_stop":
+                                        print()  # Add newline at end of message
+
+                                    if parse_response:
+                                        event = match_response(self, [event_dict])
+                                        if with_response_header:
+                                            events.append((event, response.headers))
+                                        else:
+                                            events.append(event)
+                                    else:
+                                        if with_response_header:
+                                            events.append(
+                                                (event_dict, response.headers)
+                                            )
+                                        else:
+                                            events.append(event_dict)
                                 except ValueError:
                                     continue
 
-                    if parse_response:
-                        result = match_response(self, collected_events)
-                        if with_response_header:
-                            return result, response.headers
-                        return result
-
-                    if with_response_header:
-                        return collected_events, response.headers
-                    return collected_events
+                    return events
 
                 # Regular JSON response
                 else:

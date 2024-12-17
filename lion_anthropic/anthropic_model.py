@@ -5,14 +5,8 @@ from dotenv import load_dotenv
 from lion_service.rate_limiter import RateLimiter, RateLimitError
 from lion_service.service_util import invoke_retry
 from lion_service.token_calculator import TiktokenCalculator, TokenCalculator
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    SerializeAsAny,
-    field_serializer,
-    model_validator,
-)
+from pydantic import (BaseModel, ConfigDict, Field, SerializeAsAny,
+                      field_serializer, model_validator)
 
 from .api_endpoints.api_request import AnthropicRequest
 from .api_endpoints.match_response import match_response
@@ -85,6 +79,64 @@ class AnthropicModel(BaseModel):
     @field_serializer("request_model")
     def serialize_request_model(self, value: AnthropicRequest):
         return value.model_dump(exclude_unset=True)
+
+    async def _invoke_stream(self, request_body: AnthropicMessageRequestBody):
+        """Handle streaming response from the model."""
+        events = await self.request_model.invoke(
+            json_data=request_body,
+            parse_response=True,
+            with_response_header=True,
+        )
+
+        # Process each event and update rate limits
+        for event in events:
+            # Handle event with headers
+            if isinstance(event, tuple):
+                event_body, response_headers = event
+            else:
+                event_body = event
+                response_headers = None
+
+            # Update rate limit if we have usage information
+            if isinstance(event_body, dict) and event_body.get("usage"):
+                total_token_usage = (
+                    event_body["usage"]["input_tokens"]
+                    + event_body["usage"]["output_tokens"]
+                )
+                if response_headers:
+                    self.rate_limiter.update_rate_limit(
+                        response_headers.get("Date"), total_token_usage
+                    )
+
+            yield event_body
+
+    async def _invoke_non_stream(self, request_body: AnthropicMessageRequestBody):
+        """Handle non-streaming response from the model."""
+        response = await self.request_model.invoke(
+            json_data=request_body,
+            parse_response=True,
+            with_response_header=True,
+        )
+
+        # Handle response with headers
+        if isinstance(response, tuple):
+            response_body, response_headers = response
+        else:
+            response_body = response
+            response_headers = None
+
+        # Update rate limit if we have usage information
+        if isinstance(response_body, dict) and response_body.get("usage"):
+            total_token_usage = (
+                response_body["usage"]["input_tokens"]
+                + response_body["usage"]["output_tokens"]
+            )
+            if response_headers:
+                self.rate_limiter.update_rate_limit(
+                    response_headers.get("Date"), total_token_usage
+                )
+
+        return response_body
 
     @invoke_retry(max_retries=3, base_delay=1, max_delay=60)
     async def invoke(self, **kwargs):
@@ -162,33 +214,13 @@ class AnthropicModel(BaseModel):
             raise RateLimitError("Rate limit reached for requests")
 
         try:
-            # Get response from request model
-            response = await self.request_model.invoke(
-                json_data=request_body,
-                parse_response=True,
-                with_response_header=True,
-            )
-
-            # Handle response with headers
-            if isinstance(response, tuple):
-                response_body, response_headers = response
+            if request_body.stream:
+                events = []
+                async for event in self._invoke_stream(request_body):
+                    events.append(event)
+                return events
             else:
-                response_body = response
-                response_headers = None
-
-            # Update rate limit if we have usage information
-            if isinstance(response_body, dict) and response_body.get("usage"):
-                total_token_usage = (
-                    response_body["usage"]["input_tokens"]
-                    + response_body["usage"]["output_tokens"]
-                )
-                if response_headers:
-                    self.rate_limiter.update_rate_limit(
-                        response_headers.get("Date"), total_token_usage
-                    )
-
-            return response_body
-
+                return await self._invoke_non_stream(request_body)
         except Exception as e:
             raise e
 

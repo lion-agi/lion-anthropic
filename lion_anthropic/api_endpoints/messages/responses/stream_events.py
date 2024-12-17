@@ -1,14 +1,8 @@
 from pydantic import BaseModel
 
 from .delta import ContentBlockDelta, ContentBlockStart
-from .events import (
-    ContentBlockStop,
-    MessageStartEvent,
-    MessageStop,
-    PingEvent,
-    StopReason,
-    StreamError,
-)
+from .events import (ContentBlockStop, MessageStartEvent, MessageStop,
+                     PingEvent, StopReason, StreamError)
 
 
 class StreamEvent(BaseModel):
