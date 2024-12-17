@@ -24,6 +24,8 @@ class TextContent(ContentBase):
 
     model_config = {
         "json_schema_extra": {
-            "examples": [{"type": "text", "text": "Hello, how can I help you today?"}]
+            "examples": [
+                {"type": "text", "text": "Hello, how can I help you today?"}
+            ]
         }
     }

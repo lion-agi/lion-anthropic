@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
 
 from .delta import ContentBlockDelta, ContentBlockStart
 from .events import (
@@ -6,9 +8,44 @@ from .events import (
     MessageStartEvent,
     MessageStop,
     PingEvent,
-    StopReason,
     StreamError,
 )
+from .types import StopReason
+from .usage import Usage
+
+
+class MetadataEvent(BaseModel):
+    """Model for metadata events containing message information."""
+
+    type: Literal["metadata"] = "metadata"
+    id: str = Field(..., description="Message ID")
+    model: str = Field(..., description="Model used for generation")
+    role: Literal["assistant"] = Field(
+        "assistant", description="Role of the message sender"
+    )
+    stop_reason: StopReason | None = Field(
+        None, description="Reason for stopping generation"
+    )
+    stop_sequence: str | None = Field(
+        None, description="Stop sequence that was matched, if any"
+    )
+    usage: Usage | None = Field(None, description="Token usage information")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "type": "metadata",
+                    "id": "msg_123",
+                    "model": "claude-3-5-sonnet-20241022",
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 25, "output_tokens": 100},
+                }
+            ]
+        }
+    }
 
 
 class StreamEvent(BaseModel):
@@ -56,6 +93,7 @@ class StreamEvent(BaseModel):
 
         # Map event types to their models
         EVENT_MODELS = {
+            "metadata": MetadataEvent,
             "message_start": MessageStartEvent,
             "content_block_start": ContentBlockStart,
             "content_block_delta": ContentBlockDelta,

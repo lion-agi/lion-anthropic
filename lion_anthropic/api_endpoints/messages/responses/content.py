@@ -27,7 +27,9 @@ class TextResponseContent(MessageResponseContent):
     text: str = Field(..., description="The text content")
 
     model_config = {
-        "json_schema_extra": {"examples": [{"type": "text", "text": "Hi, I'm Claude."}]}
+        "json_schema_extra": {
+            "examples": [{"type": "text", "text": "Hi, I'm Claude."}]
+        }
     }
 
 

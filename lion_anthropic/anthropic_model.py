@@ -37,7 +37,9 @@ class AnthropicModel(BaseModel):
         description="ID of the model to use (e.g., claude-3-opus-20240229)"
     )
     request_model: AnthropicRequest = Field(description="Making requests")
-    rate_limiter: RateLimiter = Field(description="Rate Limiter to track usage")
+    rate_limiter: RateLimiter = Field(
+        description="Rate Limiter to track usage"
+    )
     text_token_calculator: SerializeAsAny[TokenCalculator] = Field(
         default=None, description="Token Calculator"
     )
@@ -125,7 +127,9 @@ class AnthropicModel(BaseModel):
                             "message_stop",
                         ]:
                             response_chunks.append(chunk)
-                    elif isinstance(chunk, (dict, aiohttp.multidict.CIMultiDictProxy)):
+                    elif isinstance(
+                        chunk, (dict, aiohttp.multidict.CIMultiDictProxy)
+                    ):
                         response_headers = chunk
 
                 # Update rate limit if we have usage information
@@ -244,11 +248,13 @@ class AnthropicModel(BaseModel):
 
             # Handle non-streaming requests
             try:
-                response_body, response_headers = await self.request_model.invoke(
-                    json_data=request_body,
-                    output_file=kwargs.get("output_file"),
-                    with_response_header=True,
-                    parse_response=False,
+                response_body, response_headers = (
+                    await self.request_model.invoke(
+                        json_data=request_body,
+                        output_file=kwargs.get("output_file"),
+                        with_response_header=True,
+                        parse_response=False,
+                    )
                 )
             except AttributeError as e:
                 # If headers access fails, try without headers
@@ -277,7 +283,9 @@ class AnthropicModel(BaseModel):
         except Exception as e:
             raise e
 
-    async def get_input_token_len(self, request_body: AnthropicMessageRequestBody):
+    async def get_input_token_len(
+        self, request_body: AnthropicMessageRequestBody
+    ):
         if request_model := getattr(request_body, "model"):
             if request_model != self.model:
                 raise ValueError(
@@ -286,10 +294,14 @@ class AnthropicModel(BaseModel):
 
         total_tokens = 0
         for message in request_body.messages:
-            total_tokens += self.text_token_calculator.calculate(message.content)
+            total_tokens += self.text_token_calculator.calculate(
+                message.content
+            )
 
         if request_body.system:
-            total_tokens += self.text_token_calculator.calculate(request_body.system)
+            total_tokens += self.text_token_calculator.calculate(
+                request_body.system
+            )
 
         return total_tokens
 
@@ -309,7 +321,9 @@ class AnthropicModel(BaseModel):
                 estimated_output_len = output_token_config.get(self.model, 0)
                 self.estimated_output_len = estimated_output_len
 
-        if self.rate_limiter.check_availability(input_tokens_len, estimated_output_len):
+        if self.rate_limiter.check_availability(
+            input_tokens_len, estimated_output_len
+        ):
             return True
         else:
             return False
@@ -330,7 +344,8 @@ class AnthropicModel(BaseModel):
         model_price_info_dict = price_config["model"][self.model]
         estimated_price = (
             model_price_info_dict["input_tokens"] * num_of_input_tokens
-            + model_price_info_dict["output_tokens"] * estimated_num_of_output_tokens
+            + model_price_info_dict["output_tokens"]
+            * estimated_num_of_output_tokens
         )
 
         return estimated_price

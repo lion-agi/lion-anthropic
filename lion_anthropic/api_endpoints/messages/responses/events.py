@@ -1,9 +1,10 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from lion_anthropic.api_endpoints.data_models import AnthropicEndpointResponseBody
+from ..response_body import AnthropicMessageResponseBody
+from .types import StopReason
 
 
 class ErrorType(str, Enum):
@@ -33,38 +34,28 @@ class StreamError(BaseModel):
             "examples": [
                 {
                     "type": "error",
-                    "error": {"type": "overloaded_error", "message": "Overloaded"},
+                    "error": {
+                        "type": "overloaded_error",
+                        "message": "Overloaded",
+                    },
                 }
             ]
         }
     }
 
 
-class StopReason(str, Enum):
-    """
-    Enumeration of possible reasons why the model stopped generating.
-
-    Attributes:
-        END_TURN: the model reached a natural stopping point
-        MAX_TOKENS: exceeded the requested max_tokens or the model's maximum
-        STOP_SEQUENCE: one of the provided custom stop_sequences was generated
-        TOOL_USE: the model invoked one or more tools
-    """
-
-    END_TURN = "end_turn"
-    MAX_TOKENS = "max_tokens"
-    STOP_SEQUENCE = "stop_sequence"
-    TOOL_USE = "tool_use"
-
-
 class ContentBlockStop(BaseModel):
     """Model for content_block_stop events."""
 
     type: Literal["content_block_stop"]
-    index: int = Field(..., description="Index of the content block that is complete")
+    index: int = Field(
+        ..., description="Index of the content block that is complete"
+    )
 
     model_config = {
-        "json_schema_extra": {"examples": [{"type": "content_block_stop", "index": 0}]}
+        "json_schema_extra": {
+            "examples": [{"type": "content_block_stop", "index": 0}]
+        }
     }
 
 
@@ -73,7 +64,9 @@ class MessageStop(BaseModel):
 
     type: Literal["message_stop"]
 
-    model_config = {"json_schema_extra": {"examples": [{"type": "message_stop"}]}}
+    model_config = {
+        "json_schema_extra": {"examples": [{"type": "message_stop"}]}
+    }
 
 
 class PingEvent(BaseModel):
@@ -92,7 +85,21 @@ class MessageStartEvent(BaseModel):
     """
 
     type: Literal["message_start"]
-    message: AnthropicEndpointResponseBody
+    message: dict = Field(
+        ...,
+        description="Message object with initial metadata. Will be validated as AnthropicMessageResponseBody.",
+    )
+
+    @model_validator(mode="after")
+    def validate_message(self):
+        """Validate that the message field can be converted to AnthropicMessageResponseBody."""
+        if not isinstance(self.message, dict):
+            raise ValueError("Message must be a dictionary")
+        try:
+            AnthropicMessageResponseBody.model_validate(self.message)
+        except ValueError as e:
+            raise ValueError(f"Invalid message format: {e}")
+        return self
 
     model_config = {
         "json_schema_extra": {

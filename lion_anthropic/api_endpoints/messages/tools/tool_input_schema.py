@@ -21,9 +21,12 @@ class ToolInputSchemaProperty(BaseModel):
     """
 
     type: str = Field(
-        ..., description="The type of the property (e.g., 'string', 'number', etc.)"
+        ...,
+        description="The type of the property (e.g., 'string', 'number', etc.)",
     )
-    description: str | None = Field(None, description="Description of the property")
+    description: str | None = Field(
+        None, description="Description of the property"
+    )
     enum: list[str] | None = Field(
         None, description="List of allowed values for the property"
     )
@@ -47,7 +50,9 @@ class ToolInputSchema(BaseModel):
     Model for defining the input schema for a tool.
     """
 
-    type: Literal["object"] = Field(..., description="The type of the input schema")
+    type: Literal["object"] = Field(
+        ..., description="The type of the input schema"
+    )
     properties: dict[str, ToolInputSchemaProperty] = Field(
         ...,
         description="Dictionary of properties that define the structure of the input",

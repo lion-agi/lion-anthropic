@@ -69,7 +69,9 @@ class AnthropicService(Service):
     @classmethod
     def list_tasks(cls):
         methods = []
-        for name, member in inspect.getmembers(cls, predicate=inspect.isfunction):
+        for name, member in inspect.getmembers(
+            cls, predicate=inspect.isfunction
+        ):
             if name not in [
                 "__init__",
                 "__setattr__",
@@ -82,8 +84,14 @@ class AnthropicService(Service):
     @classmethod
     def list_tasks(cls):
         methods = []
-        for name, member in inspect.getmembers(cls, predicate=inspect.isfunction):
-            if name not in ["__init__", "check_rate_limiter", "match_data_model"]:
+        for name, member in inspect.getmembers(
+            cls, predicate=inspect.isfunction
+        ):
+            if name not in [
+                "__init__",
+                "check_rate_limiter",
+                "match_data_model",
+            ]:
                 methods.append(name)
         return methods
 

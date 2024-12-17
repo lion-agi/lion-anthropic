@@ -21,15 +21,21 @@ class AnthropicEndpoint(str, Enum):
 
 
 class AnthropicRequest(BaseModel):
-    api_key: str = Field(description="API key for authentication", exclude=True)
+    api_key: str = Field(
+        description="API key for authentication", exclude=True
+    )
 
     endpoint: str = Field(description="Endpoint for request")
 
     method: str = Field(description="HTTP method")
 
-    content_type: str | None = Field(default=None, description="HTTP Content-Type")
+    content_type: str | None = Field(
+        default=None, description="HTTP Content-Type"
+    )
 
-    api_version: str = Field(default="2023-06-01", description="Anthropic API version")
+    api_version: str = Field(
+        default="2023-06-01", description="Anthropic API version"
+    )
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -80,7 +86,9 @@ class AnthropicRequest(BaseModel):
     ) -> Any:
         url = self.base_url + self.get_endpoint(path_param)
         headers = self.get_headers()
-        json_data = json_data.model_dump(exclude_unset=True) if json_data else None
+        json_data = (
+            json_data.model_dump(exclude_unset=True) if json_data else None
+        )
         params = params.model_dump(exclude_unset=True) if params else None
 
         async with aiohttp.ClientSession() as client:
@@ -121,13 +129,17 @@ class AnthropicRequest(BaseModel):
                         async for chunk in response.content:
                             chunk_str = chunk.decode("utf-8")
                             if chunk_str.startswith("data: "):
-                                chunk_str = chunk_str[6:]  # Remove "data: " prefix
+                                chunk_str = chunk_str[
+                                    6:
+                                ]  # Remove "data: " prefix
                             if chunk_str.strip() == "[DONE]":
                                 continue
                             try:
                                 chunk_data = json.loads(chunk_str)
                                 if file_handle:
-                                    file_handle.write(json.dumps(chunk_data) + "\n")
+                                    file_handle.write(
+                                        json.dumps(chunk_data) + "\n"
+                                    )
                                 response_body.append(chunk_data)
                             except json.JSONDecodeError:
                                 continue
@@ -178,7 +190,9 @@ class AnthropicRequest(BaseModel):
             )
 
         url = self.base_url + self.endpoint
-        json_data = json_data.model_dump(exclude_unset=True) if json_data else None
+        json_data = (
+            json_data.model_dump(exclude_unset=True) if json_data else None
+        )
 
         try:
             async with aiohttp.ClientSession() as client:
@@ -215,20 +229,27 @@ class AnthropicRequest(BaseModel):
                         async for chunk in response.content:
                             chunk_str = chunk.decode("utf-8")
                             if chunk_str.startswith("data: "):
-                                chunk_str = chunk_str[6:]  # Remove "data: " prefix
+                                chunk_str = chunk_str[
+                                    6:
+                                ]  # Remove "data: " prefix
                             if chunk_str.strip() == "[DONE]":
                                 continue
                             try:
                                 chunk_data = json.loads(chunk_str)
                                 if file_handle:
-                                    file_handle.write(json.dumps(chunk_data) + "\n")
+                                    file_handle.write(
+                                        json.dumps(chunk_data) + "\n"
+                                    )
 
                                 # Print content when verbose is True
                                 if verbose:
-                                    if chunk_data.get("type") == "content_block_delta":
-                                        if text := chunk_data.get("delta", {}).get(
-                                            "text"
-                                        ):
+                                    if (
+                                        chunk_data.get("type")
+                                        == "content_block_delta"
+                                    ):
+                                        if text := chunk_data.get(
+                                            "delta", {}
+                                        ).get("text"):
                                             print(text, end="", flush=True)
 
                                 yield chunk_data

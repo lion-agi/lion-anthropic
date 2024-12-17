@@ -16,7 +16,9 @@ class InputJsonDelta(BaseModel):
     """Model for input JSON deltas in content block updates."""
 
     type: Literal["input_json_delta"]
-    partial_json: str = Field(..., description="Partial JSON string for tool input")
+    partial_json: str = Field(
+        ..., description="Partial JSON string for tool input"
+    )
 
 
 Delta = TextDelta | InputJsonDelta
@@ -26,7 +28,9 @@ class ContentBlockStart(BaseModel):
     """Model for content_block_start events."""
 
     type: Literal["content_block_start"]
-    index: int = Field(..., description="Index in the final Message content array")
+    index: int = Field(
+        ..., description="Index in the final Message content array"
+    )
     content_block: TextResponseContent | ToolUseResponseContent = Field(
         ..., description="The initial content block with empty content"
     )
@@ -52,7 +56,9 @@ class ContentBlockDelta(BaseModel):
     """
 
     type: Literal["content_block_delta"]
-    index: int = Field(..., description="Index of the content block being updated")
+    index: int = Field(
+        ..., description="Index of the content block being updated"
+    )
     delta: Delta = Field(..., description="The delta update")
 
     model_config = {

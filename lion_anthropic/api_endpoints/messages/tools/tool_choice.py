@@ -56,7 +56,9 @@ class ToolChoice(BaseModel):
                 raise ValueError(f"Invalid tool_choice value: {tool_choice}")
 
         if tool_choice == ToolChoiceType.TOOL and data.get("name") is None:
-            raise ValueError("Tool name is required when tool_choice is set to 'tool'")
+            raise ValueError(
+                "Tool name is required when tool_choice is set to 'tool'"
+            )
         return data
 
     @model_serializer

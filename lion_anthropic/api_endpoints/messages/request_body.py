@@ -18,7 +18,9 @@ class AnthropicMessageRequestBody(AnthropicEndpointRequestBody):
     Consecutive user or assistant turns in your request will be combined into a single turn.
     """
 
-    model: str = Field(..., description="The model that will complete your prompt")
+    model: str = Field(
+        ..., description="The model that will complete your prompt"
+    )
 
     messages: list[Message] = Field(
         ...,
@@ -141,7 +143,10 @@ class AnthropicMessageRequestBody(AnthropicEndpointRequestBody):
                             },
                         }
                     ],
-                    "tool_choice": {"type": "auto", "disable_parallel_tool_use": False},
+                    "tool_choice": {
+                        "type": "auto",
+                        "disable_parallel_tool_use": False,
+                    },
                 },
                 {
                     # Multimodal message with image
@@ -150,7 +155,10 @@ class AnthropicMessageRequestBody(AnthropicEndpointRequestBody):
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": "What's in this image?"},
+                                {
+                                    "type": "text",
+                                    "text": "What's in this image?",
+                                },
                                 {
                                     "type": "image",
                                     "source": {
@@ -182,5 +190,7 @@ class AnthropicMessageRequestBody(AnthropicEndpointRequestBody):
     def validate_tools_and_tool_choice(self):
         """Validate that tool_choice is only set when tools are provided."""
         if self.tool_choice is not None and not self.tools:
-            raise ValueError("tool_choice can only be set when tools are provided")
+            raise ValueError(
+                "tool_choice can only be set when tools are provided"
+            )
         return self

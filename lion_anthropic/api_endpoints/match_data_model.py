@@ -5,4 +5,6 @@ def match_data_model(task_name):
         return {"request_body": AnthropicMessageRequestBody}
 
     else:
-        raise ValueError(f"Invalid task: {task_name}. Not supported in the service.")
+        raise ValueError(
+            f"Invalid task: {task_name}. Not supported in the service."
+        )

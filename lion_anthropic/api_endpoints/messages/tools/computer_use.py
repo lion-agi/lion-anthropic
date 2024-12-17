@@ -12,7 +12,8 @@ class ComputerUseTool(BaseTool):
     """
 
     type: Literal[ToolTypes.COMPUTER_USE_TOOL] = Field(
-        ToolTypes.COMPUTER_USE_TOOL, description="Computer use tool type identifier"
+        ToolTypes.COMPUTER_USE_TOOL,
+        description="Computer use tool type identifier",
     )
     name: Literal["computer"] = Field(
         "computer", description="Fixed name for computer use tool"
@@ -20,7 +21,9 @@ class ComputerUseTool(BaseTool):
     display_height_px: int = Field(
         ..., description="The height of the display in pixels"
     )
-    display_width_px: int = Field(..., description="The width of the display in pixels")
+    display_width_px: int = Field(
+        ..., description="The width of the display in pixels"
+    )
     display_number: int | None = Field(
         None, description="The X11 display number (e.g. 0, 1) for the display"
     )

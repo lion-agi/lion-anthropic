@@ -10,9 +10,9 @@ class ImageSource(BaseModel):
     """Model for image source information."""
 
     type: Literal["base64"] = Field(..., description="Type of image source")
-    media_type: Literal["image/jpeg", "image/png", "image/gif", "image/webp"] = Field(
-        ..., description="Media type of the image"
-    )
+    media_type: Literal[
+        "image/jpeg", "image/png", "image/gif", "image/webp"
+    ] = Field(..., description="Media type of the image")
     data: str = Field(..., description="Base64-encoded image data")
 
     model_config = {

@@ -4,7 +4,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from ..data_models import AnthropicEndpointResponseBody
 from .responses.content import ResponseContent
-from .responses.events import StopReason
+from .responses.types import StopReason
 from .responses.usage import Usage
 
 

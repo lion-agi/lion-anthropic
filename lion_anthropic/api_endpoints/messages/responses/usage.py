@@ -25,7 +25,8 @@ class Usage(BaseModel):
         ..., description="The number of output tokens which were used"
     )
     cache_creation_input_tokens: int | None = Field(
-        None, description="The number of input tokens used to create the cache entry"
+        None,
+        description="The number of input tokens used to create the cache entry",
     )
     cache_read_input_tokens: int | None = Field(
         None, description="The number of input tokens read from the cache"
@@ -39,7 +40,9 @@ class Usage(BaseModel):
         return cls(
             input_tokens=data.get("input_tokens", 0),
             output_tokens=data.get("output_tokens", 0),
-            cache_creation_input_tokens=data.get("cache_creation_input_tokens"),
+            cache_creation_input_tokens=data.get(
+                "cache_creation_input_tokens"
+            ),
             cache_read_input_tokens=data.get("cache_read_input_tokens"),
         )
 

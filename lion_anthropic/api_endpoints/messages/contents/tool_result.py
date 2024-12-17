@@ -25,12 +25,14 @@ class ToolResultContent(ContentBase):
     """Model for tool result content."""
 
     type: Literal[ContentTypes.TOOL_RESULT]
-    tool_use_id: str = Field(..., description="ID of the tool use this result is for")
+    tool_use_id: str = Field(
+        ..., description="ID of the tool use this result is for"
+    )
     is_error: bool | None = Field(
         None, description="Whether this result represents an error"
     )
-    content: str | list[ToolResultContentText | ToolResultContentImage] = Field(
-        ..., description="The content of the tool result"
+    content: str | list[ToolResultContentText | ToolResultContentImage] = (
+        Field(..., description="The content of the tool result")
     )
 
     model_config = {
@@ -39,13 +41,17 @@ class ToolResultContent(ContentBase):
                 {
                     "type": "tool_result",
                     "tool_use_id": "toolu_01D7FLrfh4GYq7yT1ULFeyMV",
-                    "content": [{"type": "text", "text": "Current price: $150.25"}],
+                    "content": [
+                        {"type": "text", "text": "Current price: $150.25"}
+                    ],
                 },
                 {
                     "type": "tool_result",
                     "tool_use_id": "toolu_01D7FLrfh4GYq7yT1ULFeyMV",
                     "is_error": True,
-                    "content": [{"type": "text", "text": "Error fetching stock price"}],
+                    "content": [
+                        {"type": "text", "text": "Error fetching stock price"}
+                    ],
                 },
             ]
         }

@@ -5,5 +5,9 @@ from .tool_result import ToolResultContent
 from .tool_use import ToolUseContent
 
 MessageContent = (
-    TextContent | ImageContent | ToolUseContent | ToolResultContent | DocumentContent
+    TextContent
+    | ImageContent
+    | ToolUseContent
+    | ToolResultContent
+    | DocumentContent
 )

@@ -21,7 +21,9 @@ class RequestMetadata(BaseModel):
         "information such as name, email address, or phone number.",
     )
 
-    model_config = {"json_schema_extra": {"examples": [{"user_id": "user_12345abcde"}]}}
+    model_config = {
+        "json_schema_extra": {"examples": [{"user_id": "user_12345abcde"}]}
+    }
 
 
 class SystemPromptContent(BaseModel):
@@ -36,7 +38,9 @@ class SystemPromptContent(BaseModel):
         ... )
     """
 
-    type: Literal["text"] = Field("text", description="Type of system prompt content")
+    type: Literal["text"] = Field(
+        "text", description="Type of system prompt content"
+    )
     text: str = Field(..., description="The system prompt text")
     cache_control: CacheControl | None = Field(
         None, description="Cache control settings for the system prompt"

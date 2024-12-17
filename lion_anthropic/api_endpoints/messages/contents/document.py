@@ -32,7 +32,9 @@ class DocumentContent(ContentBase):
     """Model for document content."""
 
     type: Literal[ContentTypes.DOCUMENT]
-    source: DocumentSource = Field(..., description="Document source information")
+    source: DocumentSource = Field(
+        ..., description="Document source information"
+    )
 
     model_config = {
         "json_schema_extra": {
