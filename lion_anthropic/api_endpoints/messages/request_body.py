@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
 
 from ..data_models import AnthropicEndpointRequestBody
 from .message import Message

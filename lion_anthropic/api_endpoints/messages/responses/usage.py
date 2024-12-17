@@ -31,6 +31,18 @@ class Usage(BaseModel):
         None, description="The number of input tokens read from the cache"
     )
 
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "Usage | None":
+        """Create a Usage object from a dictionary."""
+        if not data:
+            return None
+        return cls(
+            input_tokens=data.get("input_tokens", 0),
+            output_tokens=data.get("output_tokens", 0),
+            cache_creation_input_tokens=data.get("cache_creation_input_tokens"),
+            cache_read_input_tokens=data.get("cache_read_input_tokens"),
+        )
+
     model_config = {
         "json_schema_extra": {
             "examples": [
