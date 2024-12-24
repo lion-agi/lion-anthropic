@@ -1,351 +1,314 @@
-from pathlib import Path
+# Copyright (c) 2023 - 2024, HaiyangLi <quantocean.li at gmail dot com>
+#
+# SPDX-License-Identifier: Apache-2.0
 
-import aiohttp
+import os
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, Optional
+
 import yaml
+from anthropic import AsyncAnthropic
+from anthropic.types import MessageParam, MessageStreamEvent
 from dotenv import load_dotenv
 from lion_service.rate_limiter import RateLimiter, RateLimitError
 from lion_service.service_util import invoke_retry
-from lion_service.token_calculator import TiktokenCalculator, TokenCalculator
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    SerializeAsAny,
-    field_serializer,
-    model_validator,
-)
+from lion_service.token_calculator import TiktokenCalculator
+from pydantic import BaseModel, ConfigDict, Field
 
-from .api_endpoints.api_request import AnthropicRequest
-from .api_endpoints.match_response import match_response
-from .api_endpoints.messages.message import Message
-from .api_endpoints.messages.request_body import AnthropicMessageRequestBody
+from .model_version import ModelVersion
 
 load_dotenv()
 path = Path(__file__).parent
 
-price_config_file_name = path / "anthropic_price_data.yaml"
-max_output_token_file_name = path / "anthropic_max_output_token_data.yaml"
+
+class AnthropicModelConfig(BaseModel):
+    """Configuration for AnthropicModel."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    model: str = Field(description="ID of the model to use")
+    client: Optional[AsyncAnthropic] = None
+    rate_limiter: Optional[RateLimiter] = None
+    text_token_calculator: Optional[TiktokenCalculator] = None
+    estimated_output_len: int = Field(default=0)
+    api_key: Optional[str] = None
 
 
-class AnthropicModel(BaseModel):
-    """
-    Model class for Anthropic API interactions.
-    Handles request management, rate limiting, and token calculation.
-    """
+class AnthropicModel:
+    """Anthropic model configuration and execution handler using official SDK."""
 
-    model: str = Field(
-        description="ID of the model to use (e.g., claude-3-opus-20240229)"
-    )
-    request_model: AnthropicRequest = Field(description="Making requests")
-    rate_limiter: RateLimiter = Field(
-        description="Rate Limiter to track usage"
-    )
-    text_token_calculator: SerializeAsAny[TokenCalculator] = Field(
-        default=None, description="Token Calculator"
-    )
-    estimated_output_len: int = Field(
-        default=0, description="Expected output len before making request"
-    )
+    def __init__(self, **kwargs):
+        # Initialize configuration
+        config = AnthropicModelConfig(**kwargs)
 
-    model_config = ConfigDict(extra="forbid")
+        # Set up API client
+        if config.api_key:
+            self.client = AsyncAnthropic(api_key=config.api_key)
+        elif os.getenv("ANTHROPIC_API_KEY"):
+            self.client = AsyncAnthropic(
+                api_key=os.getenv("ANTHROPIC_API_KEY")
+            )
+        else:
+            raise ValueError("API key must be provided or set in environment")
 
-    @model_validator(mode="before")
-    @classmethod
-    def parse_input(cls, data: dict):
-        if not isinstance(data, dict):
-            raise ValueError("Invalid init param")
+        # Set up rate limiter
+        if config.rate_limiter:
+            self.rate_limiter = config.rate_limiter
+        else:
+            params = {}
+            if "limit_tokens" in kwargs:
+                params["limit_tokens"] = kwargs["limit_tokens"]
+            if "limit_requests" in kwargs:
+                params["limit_requests"] = kwargs["limit_requests"]
+            self.rate_limiter = RateLimiter(**params)
 
-        # parse request model
-        request_model_params = {
-            "api_key": data.pop("api_key", None),
-            "endpoint": data.pop("endpoint", None),
-            "method": data.pop("method", None),
-            "content_type": data.pop("content_type", None),
-            "api_version": data.pop("api_version", None),
-        }
-        data["request_model"] = AnthropicRequest(**request_model_params)
-
-        # parse rate limiter
-        if "rate_limiter" not in data:
-            rate_limiter_params = {}
-            if limit_tokens := data.pop("limit_tokens", None):
-                rate_limiter_params["limit_tokens"] = limit_tokens
-            if limit_requests := data.pop("limit_requests", None):
-                rate_limiter_params["limit_requests"] = limit_requests
-
-            data["rate_limiter"] = RateLimiter(**rate_limiter_params)
-
-        # parse token calculator
+        # Set up token calculator
         try:
-            # Anthropic uses cl100k_base encoding
-            text_calc = TiktokenCalculator(encoding_name="cl100k_base")
-            data["text_token_calculator"] = text_calc
+            self.text_token_calculator = TiktokenCalculator(
+                encoding_name="cl100k_base"
+            )
         except Exception:
-            pass
+            self.text_token_calculator = None
 
-        return data
+        # Set other attributes
+        self.model = config.model
+        self.estimated_output_len = config.estimated_output_len
 
-    @field_serializer("request_model")
-    def serialize_request_model(self, value: AnthropicRequest):
-        return value.model_dump(exclude_unset=True)
-
-    async def stream(
-        self,
-        request_body: AnthropicMessageRequestBody,
-        output_file=None,
-        parse_response=True,
-    ):
-        """Handle streaming response from the model."""
-        if not getattr(request_body, "stream", False):
-            request_body.stream = True
-
-        # Check remaining rate limit
-        input_token_len = await self.get_input_token_len(request_body)
-        invoke_viability_result = self.verify_invoke_viability(
-            input_tokens_len=input_token_len,
-            estimated_output_len=request_body.max_tokens,
+        # Load configurations
+        self.path = Path(__file__).parent
+        self.price_config_file = self.path / "config/anthropic_price_data.yaml"
+        self.max_output_token_file = (
+            self.path / "config/anthropic_max_output_token_data.yaml"
         )
-        if not invoke_viability_result:
-            raise RateLimitError("Rate limit reached for requests")
-
-        try:
-            # Get response stream
-            response_chunks = []
-            response_headers = None
-
-            try:
-                async for chunk in self.request_model.stream(
-                    json_data=request_body,
-                    output_file=output_file,
-                    with_response_header=True,
-                    verbose=True,
-                ):
-                    if isinstance(chunk, dict):
-                        if chunk.get("type") in [
-                            "content_block_delta",
-                            "message_delta",
-                            "message_stop",
-                        ]:
-                            response_chunks.append(chunk)
-                    elif isinstance(
-                        chunk, (dict, aiohttp.multidict.CIMultiDictProxy)
-                    ):
-                        response_headers = chunk
-
-                # Update rate limit if we have usage information
-                if response_chunks and response_chunks[-1].get("usage"):
-                    total_token_usage = (
-                        response_chunks[-1]["usage"]["input_tokens"]
-                        + response_chunks[-1]["usage"]["output_tokens"]
-                    )
-                    if response_headers:
-                        self.rate_limiter.update_rate_limit(
-                            response_headers.get("Date"), total_token_usage
-                        )
-
-                if parse_response:
-                    return match_response(self.request_model, response_chunks)
-                else:
-                    return response_chunks
-
-            except AttributeError:
-                # If streaming fails, fall back to regular invoke
-                response_body = await self.request_model.invoke(
-                    json_data=request_body,
-                    output_file=output_file,
-                    parse_response=False,
-                )
-                if parse_response:
-                    return match_response(self.request_model, response_body)
-                return response_body
-
-        except Exception as e:
-            raise e
 
     @invoke_retry(max_retries=3, base_delay=1, max_delay=60)
-    async def invoke(self, **kwargs):
-        """
-        Invoke the model with the given parameters.
-        Handles both streaming and non-streaming responses.
-        """
-        # Extract request data
-        if "request_body" in kwargs:
-            request_data = kwargs["request_body"]
-            if isinstance(request_data, dict):
-                request_data["model"] = self.model
-            else:
-                request_data.model = self.model
-        else:
-            # Extract messages from kwargs
-            messages = kwargs.pop("messages", None)
-            if not messages:
-                raise ValueError("At least one message is required")
+    async def invoke(
+        self,
+        messages: list[Dict[str, Any]],
+        max_tokens: Optional[int] = None,
+        stream: bool = False,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        stop_sequences: Optional[list[str]] = None,
+        system: Optional[str] = None,
+        **kwargs,
+    ) -> Any:
+        """Execute model request with validation and rate limiting."""
+        if not self.client:
+            raise ValueError("API client not initialized")
 
-            # Convert to list if single message
-            if not isinstance(messages, list):
-                messages = [messages]
+        # Calculate input tokens
+        input_tokens = await self._calculate_input_tokens(messages, system)
 
-            # Convert messages to Message objects if needed
-            processed_messages = []
-            for msg in messages:
-                if isinstance(msg, dict):
-                    processed_messages.append(Message(**msg))
-                elif isinstance(msg, Message):
-                    processed_messages.append(msg)
-                else:
-                    raise ValueError(f"Invalid message format: {msg}")
+        # Set max tokens if not provided
+        if max_tokens is None:
+            max_tokens = self._get_max_output_tokens()
 
-            # Verify we have at least one message
-            if not processed_messages:
-                raise ValueError("At least one message is required")
+        # Validate request
+        if not self._validate_token_lengths(input_tokens, max_tokens):
+            raise ValueError("Request exceeds model context window")
 
-            # Get max_tokens, ensuring it's at least 1
-            max_tokens = kwargs.pop("max_tokens", None)
-            if max_tokens is None:
-                max_tokens = self.estimated_output_len
-            if not max_tokens or max_tokens < 1:
-                max_tokens = 1
-
-            # Build request data
-            request_data = {
-                "model": self.model,
-                "messages": processed_messages,
-                "max_tokens": max_tokens,
-                "stream": kwargs.pop("stream", False),
-                "temperature": kwargs.pop("temperature", None),
-                "top_p": kwargs.pop("top_p", None),
-                "top_k": kwargs.pop("top_k", None),
-                "stop_sequences": kwargs.pop("stop_sequences", None),
-                "system": kwargs.pop("system", None),
-                "metadata": kwargs.pop("metadata", None),
-                "tools": kwargs.pop("tools", None),
-                "tool_choice": kwargs.pop("tool_choice", None),
-            }
-
-        # Create request body
-        if isinstance(request_data, dict):
-            request_body = AnthropicMessageRequestBody(**request_data)
-        else:
-            request_body = request_data
-
-        # Check remaining rate limit
-        input_token_len = await self.get_input_token_len(request_body)
-        invoke_viability_result = self.verify_invoke_viability(
-            input_tokens_len=input_token_len,
-            estimated_output_len=request_body.max_tokens,
-        )
-        if not invoke_viability_result:
-            raise RateLimitError("Rate limit reached for requests")
+        # Check rate limits
+        if not self.rate_limiter.check_availability(input_tokens, max_tokens):
+            raise RateLimitError(
+                "Rate limit exceeded", input_tokens, max_tokens
+            )
 
         try:
-            # Handle streaming requests
-            if getattr(request_body, "stream", False):
-                return await self.stream(
-                    request_body,
-                    output_file=kwargs.get("output_file"),
-                    parse_response=kwargs.get("parse_response", True),
-                )
+            # Format request parameters
+            request_params = {
+                "model": self.model,
+                "messages": messages,
+            }
 
-            # Handle non-streaming requests
-            try:
-                response_body, response_headers = (
-                    await self.request_model.invoke(
-                        json_data=request_body,
-                        output_file=kwargs.get("output_file"),
-                        with_response_header=True,
-                        parse_response=False,
-                    )
-                )
-            except AttributeError as e:
-                # If headers access fails, try without headers
-                response_body = await self.request_model.invoke(
-                    json_data=request_body,
-                    output_file=kwargs.get("output_file"),
-                    with_response_header=False,
-                    parse_response=False,
-                )
-                response_headers = None
+            # Add optional parameters only if they are not None
+            if max_tokens is not None:
+                request_params["max_tokens"] = max_tokens
+            if temperature is not None:
+                request_params["temperature"] = temperature
+            if top_p is not None:
+                request_params["top_p"] = top_p
+            if top_k is not None:
+                request_params["top_k"] = top_k
+            if metadata is not None:
+                request_params["metadata"] = metadata
+            if stop_sequences is not None:
+                request_params["stop_sequences"] = stop_sequences
+            if system is not None:
+                request_params["system"] = system
 
-            # Update rate limit if we have usage information
-            if isinstance(response_body, dict) and response_body.get("usage"):
-                total_token_usage = (
-                    response_body["usage"]["input_tokens"]
-                    + response_body["usage"]["output_tokens"]
-                )
-                self.rate_limiter.update_rate_limit(
-                    response_headers.get("Date"), total_token_usage
-                )
+            request_params.update(kwargs)
 
-            if kwargs.get("parse_response", True):
-                return match_response(self.request_model, response_body)
-            return response_body
+            if stream:
+                request_params["stream"] = True
+                return self._stream_response(**request_params)
+
+            response = await self.client.messages.create(**request_params)
+
+            # Update rate limiter if usage info available
+            if response.usage:
+                total_tokens = (
+                    response.usage.input_tokens + response.usage.output_tokens
+                )
+                await self._update_rate_limiter(total_tokens)
+
+            return response
 
         except Exception as e:
-            raise e
+            # Re-raise rate limit errors
+            if isinstance(e, RateLimitError):
+                raise
+            raise self._handle_error(e)
 
-    async def get_input_token_len(
-        self, request_body: AnthropicMessageRequestBody
-    ):
-        if request_model := getattr(request_body, "model"):
-            if request_model != self.model:
-                raise ValueError(
-                    f"Request model does not match. Model is {self.model}, but request is made for {request_model}."
-                )
+    async def _stream_response(
+        self, **kwargs
+    ) -> AsyncGenerator[MessageStreamEvent, None]:
+        """Handle streaming responses."""
+        if not self.client:
+            raise ValueError("API client not initialized")
+
+        try:
+            stream = await self.client.messages.create(**kwargs)
+            async for event in stream:
+                # Update rate limiter for MessageDeltaEvent with usage info
+                if hasattr(event, "usage") and event.usage:
+                    total_tokens = 0
+                    if hasattr(event.usage, "input_tokens"):
+                        total_tokens += event.usage.input_tokens
+                    if hasattr(event.usage, "output_tokens"):
+                        total_tokens += event.usage.output_tokens
+                    if total_tokens > 0:
+                        await self._update_rate_limiter(total_tokens)
+                yield event
+
+        except Exception as e:
+            raise self._handle_error(e)
+
+    async def stream_text(
+        self, messages: list[Dict[str, Any]], **kwargs
+    ) -> AsyncGenerator[str, None]:
+        """Stream just the text content from the response.
+
+        Args:
+            messages: List of messages
+            **kwargs: Additional parameters for create
+
+        Yields:
+            Text chunks from the response
+        """
+        async for event in await self.invoke(messages, stream=True, **kwargs):
+            if event.type == "content_block_delta" and hasattr(event, "delta"):
+                if event.delta.type == "text_delta":
+                    yield event.delta.text
+
+    async def _calculate_input_tokens(
+        self, messages: list[MessageParam], system: Optional[str] = None
+    ) -> int:
+        """Calculate total input tokens."""
+        if not self.text_token_calculator:
+            # If no calculator, use conservative estimate
+            return sum(len(str(msg)) for msg in messages) // 3
 
         total_tokens = 0
-        for message in request_body.messages:
-            total_tokens += self.text_token_calculator.calculate(
-                message.content
-            )
+        for msg in messages:
+            if isinstance(msg["content"], str):
+                total_tokens += self.text_token_calculator.calculate(
+                    msg["content"]
+                )
+            else:
+                for block in msg["content"]:
+                    if block["type"] == "text":
+                        total_tokens += self.text_token_calculator.calculate(
+                            block["text"]
+                        )
 
-        if request_body.system:
-            total_tokens += self.text_token_calculator.calculate(
-                request_body.system
-            )
+        if system:
+            total_tokens += self.text_token_calculator.calculate(system)
 
         return total_tokens
 
-    def verify_invoke_viability(
-        self, input_tokens_len: int = 0, estimated_output_len: int = 0
-    ):
-        self.rate_limiter.release_tokens()
+    def _validate_token_lengths(
+        self, input_tokens: int, max_tokens: int
+    ) -> bool:
+        """Validate token lengths against model limits."""
+        config = ModelVersion.get_model_config(self.model)
+        return input_tokens + max_tokens <= config["context_window"]
 
-        estimated_output_len = (
-            estimated_output_len
-            if estimated_output_len != 0
-            else self.estimated_output_len
-        )
-        if estimated_output_len == 0:
-            with open(max_output_token_file_name) as file:
-                output_token_config = yaml.safe_load(file)
-                estimated_output_len = output_token_config.get(self.model, 0)
-                self.estimated_output_len = estimated_output_len
+    def _get_max_output_tokens(self) -> int:
+        """Get maximum output tokens for model."""
+        try:
+            with open(self.max_output_token_file) as f:
+                config = yaml.safe_load(f)
+                return config.get(self.model, 4096)  # Default to 4096
+        except Exception:
+            # Fall back to model config
+            return ModelVersion.get_model_config(self.model)[
+                "max_output_tokens"
+            ]
 
-        if self.rate_limiter.check_availability(
-            input_tokens_len, estimated_output_len
-        ):
-            return True
-        else:
-            return False
+    async def _update_rate_limiter(self, total_tokens: int) -> None:
+        """Update rate limiter with token usage."""
+        time_str = "Thu, 01 Jan 2024 00:00:00 GMT"  # Placeholder timestamp
+        self.rate_limiter.update_rate_limit(time_str, total_tokens)
+
+    def _handle_error(self, error: Exception) -> Exception:
+        """Map errors to appropriate types."""
+        error_mapping = {
+            "AnthropicError": ValueError,
+            "InvalidRequestError": ValueError,
+            "AuthenticationError": ValueError,
+            "PermissionDeniedError": ValueError,
+            "InvalidAPIKeyError": ValueError,
+            "RateLimitError": RuntimeError,
+            "ServiceUnavailableError": RuntimeError,
+        }
+
+        error_type = error.__class__.__name__
+        error_class = error_mapping.get(error_type, RuntimeError)
+
+        return error_class(f"Anthropic API error: {str(error)}")
 
     def estimate_text_price(
         self,
         input_text: str,
         estimated_num_of_output_tokens: int = 0,
-    ):
+    ) -> float:
+        """Estimate request cost based on current pricing."""
         if self.text_token_calculator is None:
             raise ValueError("Token calculator not available")
 
         num_of_input_tokens = self.text_token_calculator.calculate(input_text)
 
-        with open(price_config_file_name) as file:
-            price_config = yaml.safe_load(file)
+        try:
+            with open(self.price_config_file) as f:
+                price_config = yaml.safe_load(f)
 
-        model_price_info_dict = price_config["model"][self.model]
-        estimated_price = (
-            model_price_info_dict["input_tokens"] * num_of_input_tokens
-            + model_price_info_dict["output_tokens"]
-            * estimated_num_of_output_tokens
-        )
+            if (
+                not price_config
+                or not isinstance(price_config, dict)
+                or "model" not in price_config
+                or self.model not in price_config["model"]
+            ):
+                raise ValueError("Invalid pricing configuration")
 
-        return estimated_price
+            model_price_info = price_config["model"][self.model]
+
+            # Calculate price (per 1M tokens)
+            input_cost = (num_of_input_tokens / 1_000_000) * model_price_info[
+                "input_tokens"
+            ]
+            output_cost = (
+                estimated_num_of_output_tokens / 1_000_000
+            ) * model_price_info["output_tokens"]
+
+            return input_cost + output_cost
+
+        except Exception as e:
+            raise ValueError(f"Error loading pricing configuration: {str(e)}")
+
+    @property
+    def model_config(self) -> Dict[str, Any]:
+        """Get model configuration."""
+        return ModelVersion.get_model_config(self.model)
